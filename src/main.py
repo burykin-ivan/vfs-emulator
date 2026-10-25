@@ -59,11 +59,10 @@ class ShellEmulator:
             self.print_output(f"Ошибка: Скрипт {self.script_path} не найден.")
 
     def load_vfs(self):
-        """Загрузка физической директории в память (без изменения диска)."""
+        """Загрузка физической директории в память."""
         self.vfs_root = VFSNode("/")
         if not os.path.exists(self.vfs_path):
-            msg = f"Ошибка: Директория VFS '{self.vfs_path}' не найдена."
-            self.print_output(msg)
+            self.print_output(f"Ошибка: Директория VFS '{self.vfs_path}' не найдена.")
             return
 
         try:
@@ -122,7 +121,7 @@ class ShellEmulator:
 
     def run_script(self):
         """Выполнение команд из стартового скрипта."""
-        self.print_output(f"--- Выполнение скрипта: {self.script_path} ---")
+        self.print_output(f"--- Скрипт: {self.script_path} ---")
         try:
             with open(self.script_path, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -134,7 +133,7 @@ class ShellEmulator:
                         self.print_output("Остановка: ошибка в скрипте.")
                         break
         except Exception as e:
-            self.print_output(f"Ошибка чтения скрипта: {e}")
+            self.print_output(f"Ошибка: {e}")
 
     def execute_command(self, event):
         """Обработка ввода пользователя."""
@@ -159,6 +158,10 @@ class ShellEmulator:
             return self.cmd_ls(args)
         elif cmd == "cd":
             return self.cmd_cd(args)
+        elif cmd == "tree":
+            return self.cmd_tree(args)
+        elif cmd == "du":
+            return self.cmd_du(args)
         elif cmd == "vfs-init":
             return self.cmd_vfs_init()
         elif cmd == "conf-dump":
@@ -173,11 +176,11 @@ class ShellEmulator:
             return False
 
     def cmd_ls(self, args):
-        """Логика команды ls (работает только с VFS в памяти)."""
+        """Логика ls."""
         target = args[0] if args else self.current_path
         node = self.get_node(target)
         if not node:
-            self.print_output(f"ls: {target}: Нет такого файла или каталога")
+            self.print_output(f"ls: {target}: Нет такого файла")
             return False
         if not node.is_dir:
             self.print_output(node.name)
@@ -189,22 +192,65 @@ class ShellEmulator:
         return True
 
     def cmd_cd(self, args):
-        """Логика команды cd (работает только с VFS в памяти)."""
+        """Логика cd."""
         target = args[0] if args else "/"
         node = self.get_node(target)
-        if not node:
-            self.print_output(f"cd: {target}: Нет такого файла или каталога")
-            return False
-        if not node.is_dir:
-            self.print_output(f"cd: {target}: Не является каталогом")
+        if not node or not node.is_dir:
+            self.print_output(f"cd: {target}: Не найдено")
             return False
 
         self.current_path = self.normalize_path(self.current_path, target)
         self.entry_label.config(text=f"{self.vfs_name}:{self.current_path}> ")
         return True
 
+    def cmd_tree(self, args):
+        """Логика tree (рекурсивный вывод)."""
+        target = args[0] if args else self.current_path
+        node = self.get_node(target)
+        if not node:
+            self.print_output(f"tree: {target}: Нет такого файла")
+            return False
+        
+        self.print_output(target)
+        if node.is_dir:
+            self._print_tree_recursive(node, "")
+        return True
+
+    def _print_tree_recursive(self, node, prefix):
+        """Рекурсивный обход для tree."""
+        items = sorted(node.children.items())
+        for i, (name, child) in enumerate(items):
+            is_last = (i == len(items) - 1)
+            connector = "└── " if is_last else "├── "
+            suffix = "/" if child.is_dir else ""
+            self.print_output(f"{prefix}{connector}{name}{suffix}")
+            if child.is_dir:
+                new_prefix = prefix + ("    " if is_last else "│   ")
+                self._print_tree_recursive(child, new_prefix)
+
+    def cmd_du(self, args):
+        """Логика du (подсчет размера)."""
+        target = args[0] if args else self.current_path
+        node = self.get_node(target)
+        if not node:
+            self.print_output(f"du: {target}: Нет такого файла")
+            return False
+
+        size = self._get_node_size(node)
+        self.print_output(f"{size}\t{target}")
+        return True
+
+    def _get_node_size(self, node):
+        """Рекурсивный подсчет размера в байтах."""
+        if not node.is_dir:
+            return len(node.content.encode('utf-8'))
+        total = 0
+        for child in node.children.values():
+            total += self._get_node_size(child)
+        return total
+
     def cmd_vfs_init(self):
-        """Сброс VFS к состоянию по умолчанию и очистка диска."""
+        """Сброс VFS."""
         self.current_path = "/"
         self.vfs_root = VFSNode("/")
         self.entry_label.config(text=f"{self.vfs_name}:/ > ")
@@ -213,16 +259,15 @@ class ShellEmulator:
             try:
                 shutil.rmtree(self.vfs_path)
                 os.makedirs(self.vfs_path)
-                self.print_output("Физическая директория очищена.")
+                self.print_output("Директория очищена.")
             except Exception as e:
-                self.print_output(f"Ошибка очистки диска: {e}")
-
-        self.print_output("VFS сброшена к состоянию по умолчанию.")
+                self.print_output(f"Ошибка: {e}")
+        self.print_output("VFS сброшена.")
         return True
 
 
 def parse_args():
-    """Парсинг аргументов командной строки."""
+    """Аргументы командной строки."""
     parser = argparse.ArgumentParser(description="Эмулятор оболочки ОС")
     parser.add_argument("--vfs", type=str, default="tests/vfs_minimal")
     parser.add_argument("--script", type=str, default="")
