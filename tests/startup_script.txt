@@ -1,6 +1,7 @@
-ls
+tree
+du
 cd dir1
-ls
+tree
 cd ..
 conf-dump
-echo error
+tree nonexistent_dir
