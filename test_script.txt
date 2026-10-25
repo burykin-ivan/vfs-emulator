@@ -1,0 +1,5 @@
+ls -la
+cd /tmp
+conf-dump
+echo hello
+ls -la

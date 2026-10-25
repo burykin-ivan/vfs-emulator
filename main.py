@@ -1,24 +1,23 @@
 import tkinter as tk
 from tkinter import messagebox
 import os
+import argparse
 
 class ShellEmulator:
-    """Класс для графического эмулятора оболочки."""
-    
-    def __init__(self, root, vfs_name):
-        """Инициализация окна и компонентов интерфейса."""
-        self.root = root
-        self.vfs_name = vfs_name
-        
-        # Настройка главного окна
-        self.root.title(f"Эмулятор оболочки - {self.vfs_name}")
-        self.root.geometry("600x400")
+    """Эмулятор оболочки с графическим интерфейсом."""
 
-        # Поле вывода
-        self.output_text = tk.Text(root, height=15, width=70, state='disabled', bg="black", fg="white")
+    def __init__(self, root, vfs_path, script_path):
+        self.root = root
+        self.vfs_path = vfs_path
+        self.script_path = script_path
+        self.vfs_name = os.path.basename(os.path.normpath(vfs_path)) if vfs_path else "vfs"
+        
+        self.root.title(f"Эмулятор оболочки - {self.vfs_name}")
+        self.root.geometry("800x600")
+
+        self.output_text = tk.Text(root, height=20, width=80, state='disabled', bg="black", fg="white")
         self.output_text.pack(pady=10, padx=10)
 
-        # Рамка для ввода
         input_frame = tk.Frame(root)
         input_frame.pack(fill=tk.X, padx=10, pady=5)
 
@@ -30,6 +29,17 @@ class ShellEmulator:
         self.command_entry.bind("<Return>", self.execute_command)
         self.command_entry.focus_set()
 
+        self.print_output("--- Отладка ---")
+        self.print_output(f"Путь к VFS: {self.vfs_path}")
+        self.print_output(f"Путь к скрипту: {self.script_path}")
+        self.print_output("---------------")
+
+        if self.script_path:
+            if os.path.exists(self.script_path):
+                self.root.after(500, self.run_script)
+            else:
+                self.print_output(f"Ошибка: Скрипт {self.script_path} не найден.")
+
     def print_output(self, text):
         """Вывод текста в консольное окно."""
         self.output_text.config(state='normal')
@@ -37,40 +47,68 @@ class ShellEmulator:
         self.output_text.config(state='disabled')
         self.output_text.see(tk.END)
 
+    def run_script(self):
+        """Выполнение команд из стартового скрипта."""
+        self.print_output(f"--- Выполнение скрипта: {self.script_path} ---")
+        try:
+            with open(self.script_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    cmd = line.strip()
+                    if not cmd or cmd.startswith('#'):
+                        continue
+                    
+                    self.print_output(f"Скрипт> {cmd}")
+                    if not self.process_command(cmd, is_script=True):
+                        self.print_output("Остановка: ошибка в скрипте.")
+                        break
+        except Exception as e:
+            self.print_output(f"Ошибка чтения: {e}")
+        self.print_output("--- Скрипт завершен ---")
+
     def execute_command(self, event):
-        """Обработка введенной команды."""
-        command_line = self.command_entry.get().strip()
+        """Обработка ввода пользователя."""
+        cmd = self.command_entry.get().strip()
         self.command_entry.delete(0, tk.END)
-
-        if not command_line:
+        
+        if not cmd:
             return
+            
+        self.print_output(f"{self.entry_label.cget('text')}{cmd}")
+        self.process_command(cmd)
 
-        # Требование 3: Раскрытие переменных окружения (например, $HOME)
-        expanded_line = os.path.expandvars(command_line)
-        self.print_output(f"{self.entry_label.cget('text')}{command_line}")
-
-        parts = expanded_line.split()
-        command = parts[0]
+    def process_command(self, cmd_line, is_script=False):
+        """Разбор и выполнение команды."""
+        expanded = os.path.expandvars(cmd_line)
+        parts = expanded.split()
+        cmd = parts[0]
         args = parts[1:]
 
-        # Требование 6: Команда exit
-        if command == "exit":
+        if cmd == "exit":
             self.root.quit()
-            
-        # Требование 4: Заглушки ls и cd
-        elif command in ["ls", "cd"]:
-            self.print_output(f"[Заглушка] Команда: '{command}', Аргументы: {args}")
-            
-        # Требование 4: Сообщение об ошибке
+            return True
+        elif cmd in ["ls", "cd"]:
+            self.print_output(f"[Заглушка] {cmd} {args}")
+            return True
+        elif cmd == "conf-dump":
+            self.print_output(f"vfs_path={self.vfs_path}")
+            self.print_output(f"script_path={self.script_path}")
+            return True
         else:
-            messagebox.showerror("Ошибка", f"Команда не найдена: {command}")
-            self.print_output(f"Ошибка: неизвестная команда '{command}'")
+            err = f"Команда не найдена: {cmd}"
+            if not is_script:
+                messagebox.showerror("Ошибка", err)
+            self.print_output(f"Ошибка: {err}")
+            return False
 
-def main():
-    """Точка входа в приложение."""
-    root = tk.Tk()
-    app = ShellEmulator(root, "my_vfs")
-    root.mainloop()
+def parse_args():
+    """Парсер аргументов командной строки."""
+    parser = argparse.ArgumentParser(description="Эмулятор оболочки")
+    parser.add_argument("--vfs", type=str, default="./vfs_data")
+    parser.add_argument("--script", type=str, default="")
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    root = tk.Tk()
+    app = ShellEmulator(root, args.vfs, args.script)
+    root.mainloop()
